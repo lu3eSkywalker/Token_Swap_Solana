@@ -1,17 +1,17 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, InitializeAccount, TokenAccount as SPLTokenAccount};
 
-declare_id!("D5NFgx6v3h2uZbrRExZ3Bq6NQSrwoTvsQK6U38PbSLhC");
+declare_id!("28k9cDKYGYsf4Wv4LeNGWAmEwgnxcsA5CGrDwdggPggg");
 
 #[program]
 pub mod Simple_Token_Swap {
     use super::*;
 
-    pub fn initialize_vault_Token_A(ctx: Context<InitializeVaultTokenA>) -> Result<()> {
+    pub fn initialize_vault_token_a(ctx: Context<InitializeVaultTokenA>) -> Result<()> {
         Ok(())
     }
 
-    pub fn deposit_to_vault(ctx: Context<DepositToVaultTokenA>, amount: u64) -> Result<()> {
+    pub fn deposit_to_vault_token_a(ctx: Context<DepositToVaultTokenA>, amount: u64) -> Result<()> {
         let cpi_accounts = Transfer {
             from: ctx.accounts.user_token_account.to_account_info(),
             to: ctx.accounts.vault_token_account.to_account_info(),
@@ -26,11 +26,11 @@ pub mod Simple_Token_Swap {
         Ok(())
     }
 
-    pub fn initialize_vault_Token_B(ctx: Context<InitializeVaultTokenB>) -> Result<()> {
+    pub fn initialize_vault_token_b(ctx: Context<InitializeVaultTokenB>) -> Result<()> {
         Ok(())
     }
 
-    pub fn deposit_to_vault_Token_B(ctx: Context<DepositToVaultTokenB>, amount: u64) -> Result<()> {
+    pub fn deposit_to_vault_token_b(ctx: Context<DepositToVaultTokenB>, amount: u64) -> Result<()> {
         let cpi_accounts = Transfer {
             from: ctx.accounts.user_token_account.to_account_info(),
             to: ctx.accounts.vault_token_account.to_account_info(),
