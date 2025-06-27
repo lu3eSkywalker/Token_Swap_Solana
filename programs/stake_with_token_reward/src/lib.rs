@@ -3,7 +3,7 @@ use anchor_spl::token::{
     self, InitializeAccount, Mint, Token, TokenAccount, TokenAccount as SPLTokenAccount, Transfer,
 };
 
-declare_id!("DVQFzDcsENz6xg294MfNj5v96dz55YEWDK4nQkf64Xuo");
+declare_id!("D2NkS3RjEAizQCz8YLA8sK25MkXSDmwDRK4b8FkRQYj5");
 
 #[program]
 pub mod Simple_Token_Swap {
@@ -47,19 +47,22 @@ pub mod Simple_Token_Swap {
         Ok(())
     }
 
-    pub fn token_swap_A_For_B(ctx: Context<TokenSwap>, amountOfTokenB: u64) -> Result<()> {
+    pub fn swap_b_for_a(ctx: Context<TokenSwap>, amountOfTokenB: u64) -> Result<()> {
         let token_a_quantity = ctx.accounts.vault_token_a_account.amount;
         let token_b_quantity = ctx.accounts.vault_token_b_account.amount;
 
         let (x) = amm_calculation(token_a_quantity, token_b_quantity)?;
 
-        let tokenAToGive = (x / ((token_b_quantity as u128) + (amountOfTokenB as u128)))
+        let tokenAToSend = (x / ((token_b_quantity as u128) + (amountOfTokenB as u128)))
             .try_into()
             .map_err(|_| error!(TokenSwapError::CalculationError))?;
 
+        let tokenAtoGive = (token_a_quantity as u128)
+                .checked_sub(tokenAToSend)
+                .ok_or(error!(TokenSwapError::CalculationError))?;
 
         require!(
-            tokenAToGive <= token_a_quantity,
+            tokenAtoGive <= token_a_quantity as u128,
             TokenSwapError::InsufficientTokenA
         );
 
@@ -92,23 +95,33 @@ pub mod Simple_Token_Swap {
         let cpi_program = ctx.accounts.token_program.to_account_info();
 
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
-        token::transfer(cpi_ctx, tokenAToGive)?;
+
+        // Convert to u64 before transferring
+        let tokenAtoGive: u64 = tokenAtoGive
+            .try_into()
+            .map_err(|_| error!(TokenSwapError::CalculationError))?;
+
+        token::transfer(cpi_ctx, tokenAtoGive)?;
 
         Ok(())
     }
 
-    pub fn token_swap_B_For_A(ctx: Context<TokenSwap>, amountOfTokenA: u64) -> Result<()> {
+    pub fn swap_a_for_b(ctx: Context<TokenSwap>, amountOfTokenA: u64) -> Result<()> {
         let token_a_quantity = ctx.accounts.vault_token_a_account.amount;
         let token_b_quantity = ctx.accounts.vault_token_b_account.amount;
 
         let (x) = amm_calculation(token_a_quantity, token_b_quantity)?;
 
-        let tokenBtoGive = (x / (token_a_quantity as u128) + (amountOfTokenA as u128))
+        let tokenBtoSend = (x / ((token_a_quantity as u128) + (amountOfTokenA as u128)))
                             .try_into()
                             .map_err(|_| error!(TokenSwapError::CalculationError))?;
 
+        let tokenBtoGive = (token_b_quantity as u128)
+            .checked_sub(tokenBtoSend)
+            .ok_or(error!(TokenSwapError::CalculationError))?;
+
         require!(
-            tokenBtoGive <= token_b_quantity,
+            tokenBtoGive <= token_b_quantity as u128,
             TokenSwapError::InsufficientTokenB
         );
 
@@ -141,6 +154,12 @@ pub mod Simple_Token_Swap {
         let cpi_program = ctx.accounts.token_program.to_account_info();
 
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+
+        // Convert to u64 before transferring
+        let tokenBtoGive: u64 = tokenBtoGive
+            .try_into()
+            .map_err(|_| error!(TokenSwapError::CalculationError))?;
+
         token::transfer(cpi_ctx, tokenBtoGive)?;
 
         Ok(())
