@@ -52,6 +52,62 @@ pub mod Simple_Token_Swap {
         Ok(())
     }
 
+    pub fn removeLiquidity(ctx: Context<Liquidity>, tokenAmount: u64) -> Result<()> {
+        let userProvidedLiquidity = &mut ctx.accounts.user_pda_account;
+
+        require!(userProvidedLiquidity.stakedTokenAmount >= tokenAmount, TokenSwapError::InsufficientLiquidityTokens);
+
+        // Transferring Token A from TokenVault to user
+        let mint_a_key = ctx.accounts.mint_a.key();
+
+        let seeds = &[
+            b"vaultTokenA",
+            mint_a_key.as_ref(),
+            &[ctx.bumps.vault_auth_a],
+        ];
+
+        let signer = &[&seeds[..]];
+
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.vault_token_a_account.to_account_info(),
+            to: ctx.accounts.user_token_account_for_token_a.to_account_info(),
+            authority: ctx.accounts.vault_auth_a.to_account_info(),
+        };
+
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+
+        token::transfer(cpi_ctx, tokenAmount);
+
+        // Transferring Token B from TokenVault to user
+        let mint_b_key = ctx.accounts.mint_b.key();
+
+        let seeds = &[
+            b"vaultTokenB",
+            mint_b_key.as_ref(),
+            &[ctx.bumps.vault_auth_b],
+        ];
+
+        let signer = &[&seeds[..]];
+
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.vault_token_b_account.to_account_info(),
+            to: ctx.accounts.user_token_account_for_token_b.to_account_info(),
+            authority: ctx.accounts.vault_auth_b.to_account_info(),
+        };
+
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+
+        token::transfer(cpi_ctx, tokenAmount);
+
+        userProvidedLiquidity.stakedTokenAmount -= tokenAmount;
+
+        Ok(())
+    }
+
     pub fn swap_b_for_a(ctx: Context<TokenSwap>, amountOfTokenB: u64) -> Result<()> {
         let token_a_quantity = ctx.accounts.vault_token_a_account.amount;
         let token_b_quantity = ctx.accounts.vault_token_b_account.amount;
@@ -344,6 +400,20 @@ pub struct Liquidity<'info> {
     )]
     pub vault_token_b_account: Account<'info, TokenAccount>,
 
+    /// CHECK: This is just a signer PDA, no data
+    #[account(
+        seeds = [b"vaultTokenA", mint_a.key().as_ref()],
+        bump
+    )]
+    pub vault_auth_a: AccountInfo<'info>,
+
+    /// CHECK: This is just a signer PDA, no data
+    #[account(
+        seeds = [b"vaultTokenB", mint_b.key().as_ref()],
+        bump
+    )]
+    pub vault_auth_b: AccountInfo<'info>,
+
     pub mint_a: Account<'info, Mint>,
 
     pub mint_b: Account<'info, Mint>,
@@ -414,5 +484,8 @@ pub enum TokenSwapError {
     InsufficientTokenB,
 
     #[msg("Multiplication overflow in calculation error")]
-    CalculationError
+    CalculationError,
+
+    #[msg("Insufficient amount of tokens provided in the liquidity pool")]
+    InsufficientLiquidityTokens
 }
