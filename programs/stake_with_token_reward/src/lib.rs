@@ -17,32 +17,37 @@ pub mod Simple_Token_Swap {
         Ok(())
     }
 
-    pub fn token_a_deposit_in_pda_vault(ctx: Context<DepositToVaultTokenA>, amount: u64) -> Result<()> {
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.user_token_account.to_account_info(),
-            to: ctx.accounts.vault_token_account.to_account_info(),
-            authority: ctx.accounts.user.to_account_info(),
-        };
+    pub fn initialize_user_liquidity_account(ctx: Context<InitializeUserLiquidityAccount>) -> Result<()> {
+        msg!("Liquidity account created successfully");
 
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-
-        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-        token::transfer(cpi_ctx, amount)?;
+        let pda = &mut ctx.accounts.user_pda_account;
+        pda.Owner = ctx.accounts.user.key();
+        pda.stakedTokenAmount = 0;
 
         Ok(())
     }
 
-    pub fn token_b_deposit_in_pda_vault(ctx: Context<DepositToVaultTokenB>, amount: u64) -> Result<()> {
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.user_token_account.to_account_info(),
-            to: ctx.accounts.vault_token_account.to_account_info(),
-            authority: ctx.accounts.user.to_account_info(),
-        };
+    pub fn addLiquidity(ctx: Context<Liquidity>, tokenAmount: u64) -> Result<()> {
+        deposit_to_vault_token_a(
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.user_token_account_for_token_a,
+            &ctx.accounts.vault_token_a_account,
+            &ctx.accounts.token_program,
+            tokenAmount
+        )?;
 
-        let cpi_program = ctx.accounts.token_program.to_account_info();
+        deposit_to_vault_token_b(
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.user_token_account_for_token_b,
+            &ctx.accounts.vault_token_b_account,
+            &ctx.accounts.token_program,
+            tokenAmount
+        )?;
 
-        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-        token::transfer(cpi_ctx, amount)?;
+        let pda = &mut ctx.accounts.user_pda_account;
+        pda.stakedTokenAmount += tokenAmount;
+
+        msg!("Liquidity Added Successfully");
 
         Ok(())
     }
@@ -221,6 +226,14 @@ fn deposit_to_vault_token_b<'info>(
     Ok(())
 }
 
+fn addLiquidity() {
+
+}
+
+fn removeLiquidity() {
+
+}
+
 #[derive(Accounts)]
 #[instruction()]
 pub struct InitializeVaultTokenA<'info> {
@@ -249,27 +262,6 @@ pub struct InitializeVaultTokenA<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
-}
-
-
-#[derive(Accounts)]
-pub struct DepositToVaultTokenA<'info> {
-    #[account(mut)]
-    pub user: Signer<'info>,
-
-    #[account(mut)]
-    pub user_token_account: Account<'info, TokenAccount>,
-
-    #[account(
-        mut,
-        seeds = [b"vaultTokenA", mint.key().as_ref()],
-        bump
-    )]
-    pub vault_token_account: Account<'info, TokenAccount>,
-
-    pub mint: Account<'info, Mint>,
-
-    pub token_program: Program<'info, Token>,
 }
 
 
@@ -304,23 +296,61 @@ pub struct InitializeVaultTokenB<'info> {
 }
 
 #[derive(Accounts)]
-pub struct DepositToVaultTokenB<'info> {
+pub struct InitializeUserLiquidityAccount<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
+    #[account(
+        init,
+        payer = user,
+        space = 8 + 32 + 8,
+        seeds = [b"liquidityPDA", user.key().as_ref()],
+        bump
+    )]
+    pub user_pda_account: Account<'info, LiquidityAccount>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Liquidity<'info> {
     #[account(mut)]
-    pub user_token_account: Account<'info, TokenAccount>,
+    pub user: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [b"vaultTokenB", mint.key().as_ref()],
+        seeds = [b"liquidityPDA", user.key().as_ref()],
         bump
     )]
-    pub vault_token_account: Account<'info, TokenAccount>,
+    pub user_pda_account: Account<'info, LiquidityAccount>,
 
-    pub mint: Account<'info, Mint>,
+    #[account(mut)]
+    pub user_token_account_for_token_a: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub user_token_account_for_token_b: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"vaultTokenA", mint_a.key().as_ref()],
+        bump
+    )]
+    pub vault_token_a_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"vaultTokenB", mint_b.key().as_ref()],
+        bump
+    )]
+    pub vault_token_b_account: Account<'info, TokenAccount>,
+
+    pub mint_a: Account<'info, Mint>,
+
+    pub mint_b: Account<'info, Mint>,
 
     pub token_program: Program<'info, Token>,
+
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -367,6 +397,12 @@ pub struct TokenSwap<'info> {
     pub mint_b: Account<'info, Mint>,
 
     pub token_program: Program<'info, Token>,
+}
+
+#[account]
+pub struct LiquidityAccount {
+    pub Owner: Pubkey,
+    pub stakedTokenAmount: u64
 }
 
 #[error_code]
