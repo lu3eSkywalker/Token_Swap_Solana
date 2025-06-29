@@ -17,7 +17,9 @@ pub mod Simple_Token_Swap {
         Ok(())
     }
 
-    pub fn initialize_user_liquidity_account(ctx: Context<InitializeUserLiquidityAccount>) -> Result<()> {
+    pub fn initialize_user_liquidity_account(
+        ctx: Context<InitializeUserLiquidityAccount>,
+    ) -> Result<()> {
         msg!("Liquidity account created successfully");
 
         let pda = &mut ctx.accounts.user_pda_account;
@@ -33,7 +35,7 @@ pub mod Simple_Token_Swap {
             &ctx.accounts.user_token_account_for_token_a,
             &ctx.accounts.vault_token_a_account,
             &ctx.accounts.token_program,
-            tokenAmount
+            tokenAmount,
         )?;
 
         deposit_to_vault_token_b(
@@ -41,7 +43,7 @@ pub mod Simple_Token_Swap {
             &ctx.accounts.user_token_account_for_token_b,
             &ctx.accounts.vault_token_b_account,
             &ctx.accounts.token_program,
-            tokenAmount
+            tokenAmount,
         )?;
 
         let pda = &mut ctx.accounts.user_pda_account;
@@ -55,53 +57,30 @@ pub mod Simple_Token_Swap {
     pub fn removeLiquidity(ctx: Context<Liquidity>, tokenAmount: u64) -> Result<()> {
         let userProvidedLiquidity = &mut ctx.accounts.user_pda_account;
 
-        require!(userProvidedLiquidity.stakedTokenAmount >= tokenAmount, TokenSwapError::InsufficientLiquidityTokens);
+        require!(
+            userProvidedLiquidity.stakedTokenAmount >= tokenAmount,
+            TokenSwapError::InsufficientLiquidityTokens
+        );
 
-        // Transferring Token A from TokenVault to user
-        let mint_a_key = ctx.accounts.mint_a.key();
+        send_token_a_from_token_vault_to_user(
+            &ctx.accounts.mint_a,
+            &ctx.accounts.vault_auth_a,
+            &ctx.accounts.vault_token_a_account,
+            &ctx.accounts.user_token_account_for_token_a,
+            &ctx.accounts.token_program,
+            ctx.bumps.vault_auth_a,
+            tokenAmount,
+        )?;
 
-        let seeds = &[
-            b"vaultTokenA",
-            mint_a_key.as_ref(),
-            &[ctx.bumps.vault_auth_a],
-        ];
-
-        let signer = &[&seeds[..]];
-
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.vault_token_a_account.to_account_info(),
-            to: ctx.accounts.user_token_account_for_token_a.to_account_info(),
-            authority: ctx.accounts.vault_auth_a.to_account_info(),
-        };
-
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-
-        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
-
-        token::transfer(cpi_ctx, tokenAmount);
-
-        // Transferring Token B from TokenVault to user
-        let mint_b_key = ctx.accounts.mint_b.key();
-
-        let seeds = &[
-            b"vaultTokenB",
-            mint_b_key.as_ref(),
-            &[ctx.bumps.vault_auth_b],
-        ];
-
-        let signer = &[&seeds[..]];
-
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.vault_token_b_account.to_account_info(),
-            to: ctx.accounts.user_token_account_for_token_b.to_account_info(),
-            authority: ctx.accounts.vault_auth_b.to_account_info(),
-        };
-
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-
-        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
-
-        token::transfer(cpi_ctx, tokenAmount);
+        send_token_b_from_token_vault_to_user(
+            &ctx.accounts.mint_b,
+            &ctx.accounts.vault_auth_b,
+            &ctx.accounts.vault_token_b_account,
+            &ctx.accounts.user_token_account_for_token_b,
+            &ctx.accounts.token_program,
+            ctx.bumps.vault_auth_b,
+            tokenAmount,
+        )?;
 
         userProvidedLiquidity.stakedTokenAmount -= tokenAmount;
 
@@ -119,8 +98,8 @@ pub mod Simple_Token_Swap {
             .map_err(|_| error!(TokenSwapError::CalculationError))?;
 
         let tokenAtoGive = (token_a_quantity as u128)
-                .checked_sub(tokenAToSend)
-                .ok_or(error!(TokenSwapError::CalculationError))?;
+            .checked_sub(tokenAToSend)
+            .ok_or(error!(TokenSwapError::CalculationError))?;
 
         require!(
             tokenAtoGive <= token_a_quantity as u128,
@@ -136,33 +115,22 @@ pub mod Simple_Token_Swap {
             amountOfTokenB,
         )?;
 
-        // Transfer Token A from TokenVault to user
-        let mint_a_key = ctx.accounts.mint_a.key(); // prevent temp drop
-
-        let seeds = &[
-            b"vaultTokenA",
-            mint_a_key.as_ref(),
-            &[ctx.bumps.vault_auth_a],
-        ];
-
-        let signer = &[&seeds[..]];
-
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.vault_token_a_account.to_account_info(),
-            to: ctx.accounts.user_token_account_for_token_a.to_account_info(),
-            authority: ctx.accounts.vault_auth_a.to_account_info(),
-        };
-
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-
-        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
-
         // Convert to u64 before transferring
         let tokenAtoGive: u64 = tokenAtoGive
             .try_into()
             .map_err(|_| error!(TokenSwapError::CalculationError))?;
 
-        token::transfer(cpi_ctx, tokenAtoGive)?;
+
+        // Transfer Token A from Token Vault to user
+        send_token_a_from_token_vault_to_user(
+            &ctx.accounts.mint_a,
+            &ctx.accounts.vault_auth_a,
+            &ctx.accounts.vault_token_a_account,
+            &ctx.accounts.user_token_account_for_token_a,
+            &ctx.accounts.token_program,
+            ctx.bumps.vault_auth_a,
+            tokenAtoGive
+        )?;
 
         Ok(())
     }
@@ -174,8 +142,8 @@ pub mod Simple_Token_Swap {
         let (x) = amm_calculation(token_a_quantity, token_b_quantity)?;
 
         let tokenBtoSend = (x / ((token_a_quantity as u128) + (amountOfTokenA as u128)))
-                            .try_into()
-                            .map_err(|_| error!(TokenSwapError::CalculationError))?;
+            .try_into()
+            .map_err(|_| error!(TokenSwapError::CalculationError))?;
 
         let tokenBtoGive = (token_b_quantity as u128)
             .checked_sub(tokenBtoSend)
@@ -195,33 +163,22 @@ pub mod Simple_Token_Swap {
             amountOfTokenA,
         )?;
 
-        let mint_b_key = ctx.accounts.mint_b.key(); // prevent temp drop
-
-        let seeds = &[
-            b"vaultTokenB",
-            mint_b_key.as_ref(),
-            &[ctx.bumps.vault_auth_b],
-        ];
-
-        let signer = &[&seeds[..]];
-
-        // Transfer Token B from TokenVault to user
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.vault_token_b_account.to_account_info(),
-            to: ctx.accounts.user_token_account_for_token_b.to_account_info(),
-            authority: ctx.accounts.vault_auth_b.to_account_info(),
-        };
-
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-
-        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
-
         // Convert to u64 before transferring
         let tokenBtoGive: u64 = tokenBtoGive
             .try_into()
             .map_err(|_| error!(TokenSwapError::CalculationError))?;
 
-        token::transfer(cpi_ctx, tokenBtoGive)?;
+        // Transfer Token B from Token Vault to user
+
+        send_token_b_from_token_vault_to_user(
+            &ctx.accounts.mint_b,
+            &ctx.accounts.vault_auth_b,
+            &ctx.accounts.vault_token_b_account,
+            &ctx.accounts.user_token_account_for_token_b,
+            &ctx.accounts.token_program,
+            ctx.bumps.vault_auth_b,
+            tokenBtoGive,
+        )?;
 
         Ok(())
     }
@@ -282,12 +239,74 @@ fn deposit_to_vault_token_b<'info>(
     Ok(())
 }
 
-fn addLiquidity() {
+// This function sends token A from Token Vault to User
+fn send_token_a_from_token_vault_to_user<'info>(
+    mint_a: &Account<'info, Mint>,
+    vault_auth_a: &AccountInfo<'info>,
+    vault_token_a_account: &Account<'info, TokenAccount>,
+    user_token_account_for_token_a: &Account<'info, TokenAccount>,
+    token_program: &Program<'info, Token>,
+    vault_auth_a_bump: u8,
+    tokenAmount: u64,
+) -> Result<()> {
+    let mint_a_key = mint_a.key();
 
+    let seeds = &[
+        b"vaultTokenA",
+        mint_a_key.as_ref(),
+        &[vault_auth_a_bump],
+    ];
+
+    let signer = &[&seeds[..]];
+
+    let cpi_accounts = Transfer {
+        from: vault_token_a_account.to_account_info(),
+        to: user_token_account_for_token_a.to_account_info(),
+        authority: vault_auth_a.to_account_info(),
+    };
+
+    let cpi_program = token_program.to_account_info();
+
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+
+    token::transfer(cpi_ctx, tokenAmount);
+
+    Ok(())
 }
 
-fn removeLiquidity() {
+// This function sends token B from Token Vault to User
+fn send_token_b_from_token_vault_to_user<'info>(
+    mint_b: &Account<'info, Mint>,
+    vault_auth_b: &AccountInfo<'info>,
+    vault_token_b_account: &Account<'info, TokenAccount>,
+    user_token_account_for_token_b: &Account<'info, TokenAccount>,
+    token_program: &Program<'info, Token>,
+    vault_auth_b_bump: u8,
+    tokenAmount: u64,
+) -> Result<()> {
+    let mint_b_key = mint_b.key();
 
+    let seeds = &[
+        b"vaultTokenB",
+        mint_b_key.as_ref(),
+        &[vault_auth_b_bump]
+    ];
+
+    let signer = &[&seeds[..]];
+
+    let cpi_accounts = Transfer {
+        from: vault_token_b_account.to_account_info(),
+        to: user_token_account_for_token_b.to_account_info(),
+        authority: vault_auth_b.to_account_info(),
+    };
+
+    let cpi_program = token_program.to_account_info();
+
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+
+    token::transfer(cpi_ctx, tokenAmount);
+
+    Ok(())
 }
 
 #[derive(Accounts)]
@@ -319,7 +338,6 @@ pub struct InitializeVaultTokenA<'info> {
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
 }
-
 
 #[derive(Accounts)]
 #[instruction()]
@@ -472,7 +490,7 @@ pub struct TokenSwap<'info> {
 #[account]
 pub struct LiquidityAccount {
     pub Owner: Pubkey,
-    pub stakedTokenAmount: u64
+    pub stakedTokenAmount: u64,
 }
 
 #[error_code]
@@ -487,5 +505,5 @@ pub enum TokenSwapError {
     CalculationError,
 
     #[msg("Insufficient amount of tokens provided in the liquidity pool")]
-    InsufficientLiquidityTokens
+    InsufficientLiquidityTokens,
 }
